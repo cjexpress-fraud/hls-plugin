@@ -1,48 +1,80 @@
-# CCTV HLS Plugin (`hls-plugin.exe`)
+# HLS Plugin (mpv + ffmpeg)
 
-## คืออะไร
+Windows helper plugin สำหรับเล่น/ดาวน์โหลดวิดีโอ CCTV ผ่านโปรโตคอล custom:
 
-`hls-plugin.exe` เป็นตัวติดตั้ง (Inno Setup) ของแพ็กเกจ **CCTV-HLS-Plugin** บน Windows หลังติดตั้งจะวางโค้ดและไลบรารีไว้ใต้โฟลเดอร์ผู้ใช้ เช่น `%LocalAppData%\CCTV-HLS-Plugin\` และสามารถลงทะเบียนให้รัน **พร็อกซี HLS** ตอนล็อกอิน (shortcut ใน Startup) ผ่าน `hls-plugin.vbs`
+- `hls://open?...`  -> เปิดสตรีมด้วย `mpv`
+- `hls://download?...` -> ดาวน์โหลด/บันทึกเป็นไฟล์ `.mp4` ด้วย `ffmpeg`
 
-ตัวพร็อกซีจริงคือ `**hls-plugin.js`** (Node.js / Bun) — รับคำขอ HTTP ที่พอร์ต **9555** แล้วใช้ **FFmpeg** แปลงสตรีม **RTSP** (จาก NVR Dahua / Hikvision ฯลฯ) เป็น **HLS** (`playlist.m3u8` + segment `.ts`) เพื่อให้เบราว์เซอร์เล่นผ่าน `<video>` / hls.js ได้ เพราะเบราว์เซอร์เล่น RTSP โดยตรงไม่ได้
+## Contents
 
-สรุป: **เครื่องผู้ใช้ต้องรันปลั๊กอินนี้** ขณะดู CCTV จากเว็บแอป — เว็บเรียก `http://127.0.0.1:9555/...` ไม่ได้ส่ง RTSP ออกอินเทอร์เน็ตโดยตรงจากเบราว์เซอร์
+- `hls-plugin.pyw`  : ตัวจัดการโปรโตคอล (`hls://...`)
+- `mpv.exe`         : ตัวเล่นวิดีโอ
+- `ffmpeg.exe`      : ตัวแปลง/ดาวน์โหลดเป็น MP4
+- `input.conf`     : key bindings ของ `mpv` (เช่น ปรับ speed)
+- `hls-plugin.iss` : Inno Setup script สำหรับ build installer
 
-## ทำงานกับเว็บอย่างไร
+## Install / Build Installer
 
-- แอปฝั่ง frontend ใช้ URL พร็อกซีแบบมี query (เช่น `startOffset` สำหรับ seek) แล้วโหลด HLS ที่พร็อกซีสร้าง
-- ลิงก์ดาวน์โหลดตัวติดตั้งใน UI มาจาก getter `**cctvHlsPluginDownloadUrl`** ใน `frontend/assets/js/core/app.js`
-  - **GitHub Releases:** URL แบบ `releases/download/...` ใช้ได้แบบไม่ล็อกอินเมื่อ **repository เป็น Public** เท่านั้น — ถ้า repo **Private** ผู้ใช้ทั่วไปโหลดไม่ได้ (ต้องล็อกอิน GitHub หรือใช้ token) จึงควรย้าย `hls-plugin.exe` ไป **repo public แยก**, **object storage สาธารณะ**, หรือ **โฮสต์บนเว็บแอป**
-  - **ค่าเริ่มต้นในโค้ด:** ดู URL ใน `app.js` (อัปเดตเมื่อเปลี่ยนแท็ก/โฮสต์)
-  - **โฮสต์เอง / override:** ตั้งก่อนโหลดแอป เช่น  
-  `window.CCTV_HLS_PLUGIN_DOWNLOAD_URL = 'https://cdn.example.com/hls-plugin.exe';`
+ไฟล์ติดตั้งถูกสร้างด้วย `hls-plugin.iss` (Inno Setup).
 
-## ข้อกำหนดของผู้ใช้ปลายทาง
+โฟลเดอร์ `ffmpeg/` ควรมี `ffmpeg.exe` อยู่จริง และ `plugin/` ควรมี `mpv.exe`, `input.conf`, `hls-plugin.pyw`
 
-- Windows
-- ติดตั้งปลั๊กอินแล้วให้พร็อกซีรัน (พอร์ต 9555 ว่าง)
-- เปิดเว็บจากเครื่องเดียวกับที่รันปลั๊กอิน (หรือตามข้อจำกัด mixed content / loopback ที่แอปแจ้ง)
+## URL Protocol
 
-## สร้างตัวติดตั้ง (`hls-plugin.exe`)
+โปรโตคอลที่ลงทะเบียนจะเป็น `hls://...`.
 
-1. เตรียมในโฟลเดอร์ `plugin/`: `hls-plugin.js`, `hls-plugin.vbs`, `ffmpeg\`, `bun.exe` (หรือสิ่งที่ `[Files]` ใน `hls-plugin.iss` อ้างถึง), `mpv.exe` เป็นต้น
-2. เปิด `**hls-plugin.iss`** ด้วย [Inno Setup](https://jrsoftware.org/isinfo.php) แล้ว Compile
-3. ผลลัพธ์อยู่ที่ `plugin/installer_output/` (ชื่อไฟล์ตาม `OutputBaseFilename` — ปัจจุบันใช้ชื่อฐาน `hls-plugin`)
+### 1) เปิดเล่น VDO (mpv)
 
-เวอร์ชันที่แสดงในตัวติดตั้งกำหนดใน `hls-plugin.iss` (`#define MyAppVersion`).
+รูปแบบ:
 
-- **`mpv.conf`**: ตั้ง `ontop=yes` ให้หน้าต่าง MPV อยู่หน้าสุดเมื่อเปิดจากเว็บ — ถ้าไม่ต้องการ ตั้ง env `MPV_ONTOP=0` (โค้ดจะไม่ส่ง `--ontop`) หรือแก้ไฟล์ conf หลังติดตั้ง
+`hls://open?u=<rtsp-url>&title=<window-title>&geometry=1280x720`
 
-## API ของพร็อกซี (สรุป)
+ตัวอย่าง:
 
-รายละเอียดอยู่ที่หัวไฟล์ `**hls-plugin.js**` — ตัวอย่าง:
+`hls://open?u=rtsp%3A%2F%2F192.168.1.10%3A554%2Fch1&title=Branch%20%2B%20Camera`
 
-- `GET /ping` — ตรวจว่าพร็อกซีทำงาน
-- `GET /hls?u=<rtspUrl>&startOffset=...` — สตาร์ท FFmpeg แล้ว redirect ไป playlist HLS
-- `GET /hls/stop?path=<playbackId>` — หยุดสตรีมที่เกี่ยวข้อง
+ผลลัพธ์:
+- เปิดหน้าต่าง `mpv`
+- ใช้ `rtsp_transport=tcp`
+- ไม่มี audio (`--no-audio`)
+- บังคับให้ OSC แสดง (`--osc=yes` และ `--script-opts=osc-visibility=always`)
 
-## ความปลอดภัยและขนาด repo
+### 2) ดาวน์โหลดเป็น MP4 (ffmpeg)
 
-- URL RTSP มักมีข้อมูลล็อกอิน — อย่าเปิด debug โหมดที่พิมพ์ URL เต็มในสภาพ production
-- ไฟล์ `hls-plugin.exe` มักใหญ่เกินกว่าจะ commit ใน git ได้สะดวก — ใช้ `**.gitignore**` ที่ `frontend/assets/plugin/hls-plugin.exe` และแจกผ่าน **Releases** หรือโฮสต์ภายใน
+รูปแบบ:
+
+`hls://download?u=<rtsp-url>&title=<file-title>`
+
+ตัวอย่าง:
+
+`hls://download?u=rtsp%3A%2F%2F192.168.1.10%3A554%2Fch1&title=Branch%20%2B%20Camera`
+
+ขั้นตอนที่ plugin ทำ:
+- ตรวจสอบ `ffmpeg.exe` ก่อน
+- แสดงหน้าต่างเลือกปลายทางไฟล์ (`Save As`) เป็น `.mp4`
+- รัน `ffmpeg` เพื่อบันทึก:
+  - ตั้งค่า `-rtsp_transport tcp`
+  - ใช้ `-c copy` (พยายาม copy codec ตรง ๆ)
+  - ใส่ `-movflags +faststart` เพื่อให้เปิดไฟล์ได้เร็วขึ้น
+
+หมายเหตุ:
+- ระยะเวลาที่ไฟล์จะ “จบ” ขึ้นกับความยาว/สภาพของสตรีม RTSP ที่กล้องส่งมา
+
+## mpv Key Bindings (input.conf)
+
+ไฟล์ `input.conf` จะถูกโหลดโดย `mpv` ตาม working directory
+
+คีย์ที่ผูกไว้:
+
+- `LEFT`  : `add speed -0.1`
+- `RIGHT` : `add speed 0.1`
+- `DOWN`  : `set speed 1.0`
+
+## Notes for Frontend Integration
+
+ฝั่งเว็บจะเรียก custom protocol เพื่อให้ Windows plugin ทำงาน:
+- ปุ่ม “เล่น VDO” -> เรียก `hls://open?...`
+- ปุ่ม “ดาวน์โหลด VDO” -> เรียก `hls://download?...`
+
+ในทั้งสองกรณี ให้ส่ง `u` เป็น RTSP URL (encode แล้ว) และส่ง `title` เพื่อใช้เป็นชื่อหน้าต่าง/ไฟล์.
 
