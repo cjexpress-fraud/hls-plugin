@@ -1,80 +1,79 @@
-# HLS Plugin (mpv + ffmpeg)
+# HLS Plugin
 
-Windows helper plugin สำหรับเล่น/ดาวน์โหลดวิดีโอ CCTV ผ่านโปรโตคอล custom:
+CCTV Local Service สำหรับเล่นวิดีโอกล้องวงจรปิดใน browser ผ่าน HLS streaming และดาวน์โหลดเป็น MP4
 
-- `hls://open?...`  -> เปิดสตรีมด้วย `mpv`
-- `hls://download?...` -> ดาวน์โหลด/บันทึกเป็นไฟล์ `.mp4` ด้วย `ffmpeg`
+## การติดตั้ง
 
-## Contents
+1. ดาวน์โหลดไฟล์ `hls-plugin.exe` (Installer)
+2. ดับเบิลคลิกเพื่อติดตั้ง — ไม่ต้องใช้สิทธิ์ Admin
+3. ติดตั้งลงที่ `%LocalAppData%\HLS Plugin\`
+4. หลังติดตั้งเสร็จ plugin จะรันทันทีโดยอัตโนมัติ
+5. Plugin จะ autorun ทุกครั้งที่เปิดเครื่อง (ผ่าน Registry: `HKCU\...\Run`)
 
-- `hls-plugin.pyw`  : ตัวจัดการโปรโตคอล (`hls://...`)
-- `mpv.exe`         : ตัวเล่นวิดีโอ
-- `ffmpeg.exe`      : ตัวแปลง/ดาวน์โหลดเป็น MP4
-- `input.conf`     : key bindings ของ `mpv` (เช่น ปรับ speed)
-- `hls-plugin.iss` : Inno Setup script สำหรับ build installer
+## การใช้งาน
 
-## Install / Build Installer
+- Plugin ทำงานเป็น **System Tray** (icon ข้างนาฬิกา) — ไม่มีหน้าต่าง terminal
+- คลิกขวาที่ icon เพื่อดูเมนู:
+  - **HLS Plugin — Running...** — แสดงสถานะ
+  - **Exit** — ปิด service
 
-ไฟล์ติดตั้งถูกสร้างด้วย `hls-plugin.iss` (Inno Setup).
+### สำหรับ Developer
 
-โฟลเดอร์ `ffmpeg/` ควรมี `ffmpeg.exe` อยู่จริง และ `plugin/` ควรมี `mpv.exe`, `input.conf`, `hls-plugin.pyw`
+รันแบบเห็น log ใน terminal:
 
-## URL Protocol
+```
+ดับเบิลคลิก start-cctv.cmd
+```
 
-โปรโตคอลที่ลงทะเบียนจะเป็น `hls://...`.
+หรือ:
 
-### 1) เปิดเล่น VDO (mpv)
+```bash
+cd plugin
+python main.py
+```
 
-รูปแบบ:
+## โครงสร้างไฟล์
 
-`hls://open?u=<rtsp-url>&title=<window-title>&geometry=1280x720`
+| ไฟล์ | คำอธิบาย |
+|------|----------|
+| `hls-plugin.pyw` | System Tray launcher (ใช้กับ `pythonw.exe`) |
+| `main.py` | FastAPI application — endpoints ทั้งหมด |
+| `ffmpeg.py` | จัดการ ffmpeg process (HLS + download) |
+| `config.py` | ค่า config ทั้งหมด (port, paths, limits) |
+| `models.py` | Pydantic models |
+| `storage.py` | จัดการ directory + cleanup |
+| `hls-plugin.iss` | Inno Setup installer script |
+| `start-cctv.cmd` | รัน service แบบ terminal (สำหรับ dev) |
 
-ตัวอย่าง:
+## API Endpoints
 
-`hls://open?u=rtsp%3A%2F%2F192.168.1.10%3A554%2Fch1&title=Branch%20%2B%20Camera`
+| Method | Path | คำอธิบาย |
+|--------|------|----------|
+| `POST` | `/playback/start` | เริ่ม HLS stream จาก RTSP |
+| `POST` | `/playback/seek` | Seek ไปตำแหน่งที่ต้องการ |
+| `POST` | `/playback/stop` | หยุด stream |
+| `POST` | `/download/prepare` | เตรียม streaming download token |
+| `GET`  | `/download/stream/{token}` | Stream MP4 ตรงไป browser |
+| `GET`  | `/health` | ตรวจสถานะ service |
 
-ผลลัพธ์:
-- เปิดหน้าต่าง `mpv`
-- ใช้ `rtsp_transport=tcp`
-- ไม่มี audio (`--no-audio`)
-- บังคับให้ OSC แสดง (`--osc=yes` และ `--script-opts=osc-visibility=always`)
+## Port
 
-### 2) ดาวน์โหลดเป็น MP4 (ffmpeg)
+Default: `127.0.0.1:9000` (เปลี่ยนได้ผ่าน env `CCTV_PORT`)
 
-รูปแบบ:
+## Limits
 
-`hls://download?u=<rtsp-url>&title=<file-title>`
+- Stream พร้อมกัน: 2 (env `CCTV_MAX_STREAMS`)
+- Session หมดอายุ: 30 นาที
+- Download token หมดอายุ: 2 นาที
 
-ตัวอย่าง:
+## การถอนการติดตั้ง
 
-`hls://download?u=rtsp%3A%2F%2F192.168.1.10%3A554%2Fch1&title=Branch%20%2B%20Camera`
+1. ไปที่ **Settings > Apps > HLS Plugin > Uninstall**
+2. Installer จะปิด service และลบ autorun registry ให้อัตโนมัติ
 
-ขั้นตอนที่ plugin ทำ:
-- ตรวจสอบ `ffmpeg.exe` ก่อน
-- แสดงหน้าต่างเลือกปลายทางไฟล์ (`Save As`) เป็น `.mp4`
-- รัน `ffmpeg` เพื่อบันทึก:
-  - ตั้งค่า `-rtsp_transport tcp`
-  - ใช้ `-c copy` (พยายาม copy codec ตรง ๆ)
-  - ใส่ `-movflags +faststart` เพื่อให้เปิดไฟล์ได้เร็วขึ้น
+## Troubleshooting
 
-หมายเหตุ:
-- ระยะเวลาที่ไฟล์จะ “จบ” ขึ้นกับความยาว/สภาพของสตรีม RTSP ที่กล้องส่งมา
-
-## mpv Key Bindings (input.conf)
-
-ไฟล์ `input.conf` จะถูกโหลดโดย `mpv` ตาม working directory
-
-คีย์ที่ผูกไว้:
-
-- `LEFT`  : `add speed -0.1`
-- `RIGHT` : `add speed 0.1`
-- `DOWN`  : `set speed 1.0`
-
-## Notes for Frontend Integration
-
-ฝั่งเว็บจะเรียก custom protocol เพื่อให้ Windows plugin ทำงาน:
-- ปุ่ม “เล่น VDO” -> เรียก `hls://open?...`
-- ปุ่ม “ดาวน์โหลด VDO” -> เรียก `hls://download?...`
-
-ในทั้งสองกรณี ให้ส่ง `u` เป็น RTSP URL (encode แล้ว) และส่ง `title` เพื่อใช้เป็นชื่อหน้าต่าง/ไฟล์.
-
+- **Plugin ไม่ทำงาน**: ตรวจว่า icon อยู่ใน System Tray, ถ้าไม่มีให้ติดตั้งใหม่
+- **ไม่เจอ ffmpeg**: ตรวจว่ามี `ffmpeg/ffmpeg.exe` ในโฟลเดอร์ที่ติดตั้ง
+- **เล่นไม่ได้**: ตรวจ VPN เชื่อมต่อแล้ว, กล้องมี footage ในช่วงเวลานั้น
+- **Port ซ้ำ**: ตรวจว่า port 9000 ไม่ถูกใช้งานโดยโปรแกรมอื่น
