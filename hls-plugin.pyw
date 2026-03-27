@@ -7,6 +7,13 @@ import os
 import sys
 import threading
 
+# pythonw.exe has no console — sys.stdout/stderr are None → print() crashes.
+# Redirect to devnull so print() and logging work silently.
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w", encoding="utf-8")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w", encoding="utf-8")
+
 # Ensure the app directory is on sys.path so imports work
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 os.chdir(APP_DIR)
@@ -17,6 +24,20 @@ import pystray
 from PIL import Image
 
 from config import HOST, PORT
+
+# ─── Single-instance lock via port probe ────────────────────────
+import socket
+
+def _is_already_running():
+    """Check if another instance is already listening on HOST:PORT."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.settimeout(1)
+        s.connect((HOST, PORT))
+        s.close()
+        return True
+    except (ConnectionRefusedError, OSError):
+        return False
 
 
 def run_server():
@@ -52,4 +73,7 @@ def main():
 
 
 if __name__ == "__main__":
+    if _is_already_running():
+        # Another instance is already running — exit silently
+        sys.exit(0)
     main()

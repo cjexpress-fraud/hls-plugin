@@ -77,13 +77,27 @@ def _friendly_error(stderr_text: str) -> str:
     return 'ไม่พบ VDO ในช่วงเวลาที่เลือก'
 
 
+# ─── Quality presets ─────────────────────────────────────────────
+
+QUALITY_PRESETS = {
+    "360p":  {"scale": "640:360",  "crf": "30", "maxrate": "500k",  "bufsize": "750k"},
+    "480p":  {"scale": "854:480",  "crf": "28", "maxrate": "800k",  "bufsize": "1200k"},
+    "720p":  {"scale": "1280:720", "crf": "23", "maxrate": "2000k", "bufsize": "3000k"},
+}
+DEFAULT_QUALITY = "480p"
+
+def _get_quality(quality: str | None) -> dict:
+    """Return quality preset dict. Falls back to DEFAULT_QUALITY."""
+    return QUALITY_PRESETS.get(quality or DEFAULT_QUALITY, QUALITY_PRESETS[DEFAULT_QUALITY])
+
+
 # ─── HLS stream ─────────────────────────────────────────────────
 
 def _redact_url(url: str) -> str:
     """Hide credentials in RTSP URL for logging."""
     return re.sub(r'://[^@]+@', '://*****@', url)
 
-def start_stream(session_key: str, rtsp_url: str, offset_seconds: float = 0) -> str:
+def start_stream(session_key: str, rtsp_url: str, offset_seconds: float = 0, quality: str = None) -> str:
     """Start ffmpeg RTSP→HLS and return the HLS URL path."""
     print(f"[ffmpeg] start_stream session={session_key} url={_redact_url(rtsp_url)}")
     _validate_ffmpeg()
@@ -112,10 +126,13 @@ def start_stream(session_key: str, rtsp_url: str, offset_seconds: float = 0) -> 
 
     args += ["-i", rtsp_url]
 
-    # Output: HLS re-encode to 16:9 — event mode keeps all segments for seekable timeline
+    # Output: HLS re-encode to 16:9 — quality selectable (default 480p)
+    q = _get_quality(quality)
+    w, h = q["scale"].split(":")
     args += [
-        "-vf", "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2",
-        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+        "-vf", f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2",
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", q["crf"],
+        "-maxrate", q["maxrate"], "-bufsize", q["bufsize"],
         "-an",
         "-f", "hls",
         "-hls_time", str(HLS_SEGMENT_SECONDS),
@@ -216,13 +233,14 @@ _stream_tokens: dict = {}  # token -> { rtspUrl, filename, created }
 _TOKEN_TTL = 120  # 2 minutes
 
 
-def prepare_stream_download(rtsp_url: str, filename: str) -> str:
+def prepare_stream_download(rtsp_url: str, filename: str, quality: str = None) -> str:
     """Register a streaming download token. Returns token."""
     _validate_ffmpeg()
     token = uuid.uuid4().hex[:16]
     _stream_tokens[token] = {
         "rtspUrl": rtsp_url,
         "filename": filename,
+        "quality": quality,
         "created": time.time(),
     }
     # Cleanup old tokens
@@ -238,14 +256,17 @@ def consume_stream_token(token: str) -> Optional[dict]:
     return _stream_tokens.pop(token, None)
 
 
-def stream_download_generator(rtsp_url: str) -> Generator[bytes, None, None]:
+def stream_download_generator(rtsp_url: str, quality: str = None) -> Generator[bytes, None, None]:
     """Spawn ffmpeg and yield MP4 chunks directly (fragmented MP4 for streaming)."""
+    q = _get_quality(quality)
+    w, h = q["scale"].split(":")
     args = [
         FFMPEG_PATH, "-y",
         "-rtsp_transport", "tcp",
         "-i", rtsp_url,
-        "-vf", "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2",
-        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+        "-vf", f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2",
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", q["crf"],
+        "-maxrate", q["maxrate"], "-bufsize", q["bufsize"],
         "-an",
         "-movflags", "frag_keyframe+empty_moov+default_base_moof",
         "-f", "mp4",

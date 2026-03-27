@@ -8,6 +8,7 @@ from typing import Optional
 class PlaybackStartRequest(BaseModel):
     rtspUrl: str = Field(..., min_length=10)
     sessionKey: str = Field(..., pattern=r'^[a-zA-Z0-9_\-]{1,128}$')
+    quality: Optional[str] = None
 
 
 class PlaybackStartResponse(BaseModel):
@@ -20,6 +21,7 @@ class PlaybackSeekRequest(BaseModel):
     sessionKey: str = Field(..., pattern=r'^[a-zA-Z0-9_\-]{1,128}$')
     rtspUrl: str = Field(..., min_length=10)
     offsetSeconds: float = Field(0, ge=0)
+    quality: Optional[str] = None
 
 
 class PlaybackSeekResponse(BaseModel):
@@ -39,6 +41,7 @@ class PlaybackStopResponse(BaseModel):
 class DownloadPrepareRequest(BaseModel):
     rtspUrl: str = Field(..., min_length=10)
     filename: Optional[str] = None
+    quality: Optional[str] = None
 
 
 class DownloadPrepareResponse(BaseModel):

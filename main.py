@@ -56,7 +56,7 @@ app.mount("/streams", StaticFiles(directory=STREAMS_DIR), name="streams")
 @app.post("/playback/start", response_model=PlaybackStartResponse)
 async def playback_start(req: PlaybackStartRequest):
     try:
-        hls_path = ffmpeg.start_stream(req.sessionKey, req.rtspUrl)
+        hls_path = ffmpeg.start_stream(req.sessionKey, req.rtspUrl, quality=req.quality)
         hls_url = f"http://{HOST}:{PORT}{hls_path}"
         return PlaybackStartResponse(sessionKey=req.sessionKey, hlsUrl=hls_url)
     except RuntimeError as e:
@@ -69,7 +69,7 @@ async def playback_start(req: PlaybackStartRequest):
 async def playback_seek(req: PlaybackSeekRequest):
     try:
         ffmpeg.stop_stream(req.sessionKey)
-        hls_path = ffmpeg.start_stream(req.sessionKey, req.rtspUrl, req.offsetSeconds)
+        hls_path = ffmpeg.start_stream(req.sessionKey, req.rtspUrl, req.offsetSeconds, quality=req.quality)
         hls_url = f"http://{HOST}:{PORT}{hls_path}"
         return PlaybackSeekResponse(sessionKey=req.sessionKey, hlsUrl=hls_url)
     except RuntimeError as e:
@@ -90,7 +90,7 @@ async def playback_stop(req: PlaybackStopRequest):
 async def download_prepare(req: DownloadPrepareRequest):
     """Register streaming download token. Returns token + stream URL."""
     try:
-        token = ffmpeg.prepare_stream_download(req.rtspUrl, req.filename or "CCTV.mp4")
+        token = ffmpeg.prepare_stream_download(req.rtspUrl, req.filename or "CCTV.mp4", quality=req.quality)
         stream_url = f"http://{HOST}:{PORT}/download/stream/{token}"
         return DownloadPrepareResponse(token=token, streamUrl=stream_url)
     except RuntimeError as e:
@@ -111,7 +111,7 @@ async def download_stream(token: str):
         "Content-Disposition": f"attachment; filename=\"{safe_ascii}\"; filename*=UTF-8''{filename}",
     }
     return StreamingResponse(
-        ffmpeg.stream_download_generator(info["rtspUrl"]),
+        ffmpeg.stream_download_generator(info["rtspUrl"], quality=info.get("quality")),
         media_type="video/mp4",
         headers=headers,
     )
