@@ -4,6 +4,7 @@ Spawns/kills ffmpeg processes for HLS streaming and MP4 streaming download.
 """
 import os
 import re
+import socket
 import subprocess
 import threading
 import time
@@ -47,6 +48,28 @@ def _mask_credentials(url: str) -> str:
 def _validate_ffmpeg():
     if not os.path.isfile(FFMPEG_PATH):
         raise FileNotFoundError(f"ffmpeg not found at {FFMPEG_PATH}")
+
+
+def _check_host_reachable(rtsp_url: str, timeout: float = 3.0) -> tuple[bool, str]:
+    """
+    TCP-connect to the host:port extracted from the RTSP URL.
+    Returns (True, '') if reachable, or (False, error_message) if not.
+    """
+    try:
+        m = re.match(r'rtsp://(?:[^@]+@)?([^/:]+)(?::(\d+))?', rtsp_url)
+        if not m:
+            return True, ''  # cannot parse — let ffmpeg handle it
+        host = m.group(1)
+        port = int(m.group(2)) if m.group(2) else 554
+        with socket.create_connection((host, port), timeout=timeout):
+            pass
+        return True, ''
+    except socket.timeout:
+        return False, 'เชื่อมต่อกล้องไม่ได้ (หมดเวลา) — VPN อาจยังไม่ได้เชื่อมต่อ หรือ IP/Port ไม่ถูกต้อง'
+    except ConnectionRefusedError:
+        return False, 'เชื่อมต่อกล้องไม่ได้ — Port ถูกปฏิเสธ ตรวจสอบว่ากล้องเปิดอยู่และ Port ถูกต้อง'
+    except OSError:
+        return False, 'เข้าถึงกล้องไม่ได้ — ตรวจสอบว่า VPN เชื่อมต่ออยู่ และ IP ของกล้องถูกต้อง'
 
 
 def _friendly_error(stderr_text: str) -> str:
@@ -101,6 +124,10 @@ def start_stream(session_key: str, rtsp_url: str, offset_seconds: float = 0, qua
     """Start ffmpeg RTSP→HLS and return the HLS URL path."""
     print(f"[ffmpeg] start_stream session={session_key} url={_redact_url(rtsp_url)}")
     _validate_ffmpeg()
+
+    reachable, reach_err = _check_host_reachable(rtsp_url)
+    if not reachable:
+        raise RuntimeError(reach_err)
 
     with _lock:
         if session_key in _streams:
@@ -258,6 +285,10 @@ def consume_stream_token(token: str) -> Optional[dict]:
 
 def stream_download_generator(rtsp_url: str, quality: str = None) -> Generator[bytes, None, None]:
     """Spawn ffmpeg and yield MP4 chunks directly (fragmented MP4 for streaming)."""
+    reachable, reach_err = _check_host_reachable(rtsp_url)
+    if not reachable:
+        raise RuntimeError(reach_err)
+
     q = _get_quality(quality)
     w, h = q["scale"].split(":")
     args = [
